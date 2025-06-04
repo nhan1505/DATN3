@@ -25,9 +25,13 @@ for dir_path in required_dirs:
         logger.error(f"Thư mục '{dir_path}' không tồn tại.")
         raise FileNotFoundError(f"Thư mục '{dir_path}' không tồn tại.")
 
-# Tùy chỉnh StaticFiles để kiểm soát cache
+# Tùy chỉnh StaticFiles để kiểm soát cache và log
 class CustomStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
+        full_path = os.path.join(self.directory, path)
+        logger.debug(f"Yêu cầu tệp tĩnh: {path}, đường dẫn thực: {full_path}")
+        if not os.path.exists(full_path):
+            logger.warning(f"Tệp tĩnh không tồn tại: {full_path}")
         response = await super().get_response(path, scope)
         if isinstance(response, FileResponse):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -36,12 +40,13 @@ class CustomStaticFiles(StaticFiles):
         return response
 
 # Mount static files
-app.mount("/static", CustomStaticFiles(), name="static")
+app.mount("/static", CustomStaticFiles(directory="static"), name="static")
+logger.info("Mounted static files at /static")
 
 # Thiết lập templates
 templates = Jinja2Templates(directory="templates")
 
-# Tải các file mô hình
+# Tải mô hình
 try:
     models = {
         'random_forest': joblib.load('model/random_forest_model.pkl'),
@@ -50,7 +55,7 @@ try:
     logger.info("Đã tải mô hình Decision Tree và Random Forest.")
 except FileNotFoundError as e:
     logger.error(f"Lỗi khi tải mô hình: {e}")
-    raise HTTPException(status_code=500, detail="Failed to load model files")
+    raise HTTPException(status_code=500, detail="Không thể tải mô hình.")
 
 # Tỷ giá USD sang VND
 USD_TO_VND = 25000
@@ -105,16 +110,16 @@ async def predict(input_data: PredictionInput):
             logger.error(f"Khu vực không hợp lệ: {input_data.region}")
             raise HTTPException(status_code=400, detail="Khu vực không hợp lệ.")
 
-        feature_columns = ['age', 'sex', 'bmi', 'children', 'smoker', 'region_northeast', 'region_northwest', 'region_southeast']
+        feature_columns = ['age', 'sex', 'bmi', 'children', 'smoker', 'region_northwest', 'region_southeast', 'region_southwest']
         input_df = pd.DataFrame({
             'age': [input_data.age],
             'sex': [input_data.sex],
             'bmi': [bmi],
             'children': [input_data.children],
             'smoker': [input_data.smoker],
-            'region_northeast': [1 if region_str == 'northeast' else 0],
             'region_northwest': [1 if region_str == 'northwest' else 0],
-            'region_southeast': [1 if region_str == 'southeast' else 0]
+            'region_southeast': [1 if region_str == 'southeast' else 0],
+            'region_southwest': [1 if region_str == 'southwest' else 0]
         }, columns=feature_columns)
         logger.debug(f"Dữ liệu đầu vào mô hình: {input_df.to_dict()}")
 

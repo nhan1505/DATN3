@@ -158,9 +158,13 @@ if (predictionForm) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        const errorMsg =
-          errorData.detail?.map((e) => e.msg).join("; ") ||
-          `HTTP error! status: ${response.status}`;
+        let errorMsg;
+        if (Array.isArray(errorData.detail)) {
+          errorMsg = errorData.detail.map((e) => e.msg).join("; ");
+        } else {
+          errorMsg =
+            errorData.detail || `HTTP error! status: ${response.status}`;
+        }
         console.error("Server error:", errorData);
         throw new Error(errorMsg);
       }

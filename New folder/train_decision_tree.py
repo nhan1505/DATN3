@@ -1,10 +1,9 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.preprocessing import LabelEncoder
 import joblib
-import os
 import logging
 
 # Thiết lập logging
@@ -13,90 +12,53 @@ logger = logging.getLogger(__name__)
 
 # Đọc dữ liệu
 try:
-    data = pd.read_csv('data/insurance.csv')
-    logger.info("Đã đọc file 'insurance.csv' thành công.")
+    df = pd.read_csv('data/insurance.csv')
+    logger.info("Đã đọc dữ liệu từ insurance.csv")
 except FileNotFoundError:
-    logger.error("Không tìm thấy file 'data/insurance.csv'.")
-    exit(1)
+    logger.error("Tệp insurance.csv không tồn tại")
+    raise
 
 # Kiểm tra cột
-required_columns = ['age', 'sex', 'bmi', 'children', 'smoker', 'region', 'charges']
-if not all(col in data.columns for col in required_columns):
-    logger.error(f"Thiếu cột cần thiết. Các cột hiện có: {data.columns.tolist()}")
-    exit(1)
+expected_columns = ['age', 'sex', 'bmi', 'children', 'smoker', 'region', 'charges']
+if not all(col in df.columns for col in expected_columns):
+    logger.error(f"Dữ liệu thiếu cột: {set(expected_columns) - set(df.columns)}")
+    raise ValueError("Dữ liệu thiếu cột cần thiết")
 
-# Chuyển đổi categorical variables
-data['sex'] = data['sex'].map({'male': 0, 'female': 1})
-data['smoker'] = data['smoker'].map({'no': 0, 'yes': 1})
-data = pd.get_dummies(data, columns=['region'], prefix='region', drop_first=True)
+# Mã hóa biến phân loại
+le_sex = LabelEncoder()
+le_smoker = LabelEncoder()
+df['sex'] = le_sex.fit_transform(df['sex'])
+df['smoker'] = le_smoker.fit_transform(df['smoker'])
 
-# Xử lý giá trị thiếu
-if data.isnull().any().any():
-    logger.warning("Phát hiện giá trị thiếu, điền giá trị trung bình...")
-    data = data.fillna(data.mean(numeric_only=True))
+# Mã hóa one-hot cho region
+df = pd.get_dummies(df, columns=['region'], prefix='region')
+logger.info(f"Cột sau khi mã hóa: {df.columns.tolist()}")
 
-# Xử lý ngoại lệ
-def remove_outliers(df, column, lower_quantile=0.01, upper_quantile=0.99):
-    lower_bound = df[column].quantile(lower_quantile)
-    upper_bound = df[column].quantile(upper_quantile)
-    return df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
-
-data = remove_outliers(data, 'bmi')
-data = remove_outliers(data, 'charges')
-logger.info(f"Số mẫu sau khi loại bỏ ngoại lệ: {len(data)}")
-
-# Chọn đặc trưng và nhãn
-feature_columns = ['age', 'sex', 'bmi', 'children', 'smoker'] + [col for col in data.columns if col.startswith('region_')]
-X = data[feature_columns]
-y = data['charges']
+# Đặc trưng và nhãn
+feature_columns = ['age', 'sex', 'bmi', 'children', 'smoker'] + [col for col in df.columns if col.startswith('region_')]
+if 'region_southwest' not in df.columns:
+    logger.warning("Không tìm thấy region_southwest, thêm cột giả")
+    df['region_southwest'] = 0
+feature_columns = [col for col in feature_columns if col != 'region_northeast']  # Loại bỏ region_northeast nếu là tham chiếu
+X = df[feature_columns]
+y = df['charges']
+logger.info(f"Đặc trưng sử dụng: {feature_columns}")
 
 # Chia dữ liệu
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-logger.info(f"Kích thước tập huấn luyện: {X_train.shape[0]} mẫu")
-logger.info(f"Kích thước tập kiểm tra: {X_test.shape[0]} mẫu")
-
-# Thiết lập hyperparameter
-param_grid = {
-    'max_depth': [None, 5, 10, 15],
-    'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 4],
-    'max_features': ['sqrt', 'log2', None]
-}
 
 # Huấn luyện mô hình
-dt = DecisionTreeRegressor(random_state=42)
-logger.info("Bắt đầu tìm kiếm hyperparameter tối ưu...")
-grid_search = GridSearchCV(estimator=dt, param_grid=param_grid, cv=5, scoring='r2', n_jobs=-1)
-grid_search.fit(X_train, y_train)
+model = DecisionTreeRegressor(random_state=42)
+model.fit(X_train, y_train)
+logger.info("Đã huấn luyện mô hình Decision Tree")
 
-# Lấy mô hình tốt nhất
-best_model = grid_search.best_estimator_
-logger.info(f"Hyperparameter tốt nhất: {grid_search.best_params_}")
+# Lưu mô hình và LabelEncoder
+joblib.dump(model, 'model/decision_tree.pkl')
+joblib.dump(le_sex, 'model/le_sex.pkl')
+joblib.dump(le_smoker, 'model/le_smoker.pkl')
+logger.info("Đã lưu mô hình và LabelEncoder")
 
-# Đánh giá mô hình
-def evaluate_model(model, X_train, X_test, y_train, y_test):
-    train_pred = model.predict(X_train)
-    test_pred = model.predict(X_test)
-    metrics = {
-        'train_r2': r2_score(y_train, train_pred),
-        'test_r2': r2_score(y_test, test_pred),
-        'train_mae': mean_absolute_error(y_train, train_pred),
-        'test_mae': mean_absolute_error(y_test, test_pred),
-        'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
-        'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred))
-    }
-    logger.info(f"R² huấn luyện: {metrics['train_r2']:.4f}, R² kiểm tra: {metrics['test_r2']:.4f}")
-    logger.info(f"MAE huấn luyện: {metrics['train_mae']:.2f}, MAE kiểm tra: {metrics['test_mae']:.2f}")
-    logger.info(f"RMSE huấn luyện: {metrics['train_rmse']:.2f}, RMSE kiểm tra: {metrics['test_rmse']:.2f}")
-    return metrics
-
-metrics = evaluate_model(best_model, X_train, X_test, y_train, y_test)
-
-# Lưu mô hình
-try:
-    os.makedirs('model', exist_ok=True)
-    joblib.dump(best_model, 'model/decision_tree_model.pkl')
-    logger.info("Đã lưu mô hình Decision Tree.")
-except Exception as e:
-    logger.error(f"Lỗi khi lưu mô hình: {e}")
-    exit(1)
+# Đánh giá
+y_pred = model.predict(X_test)
+mse = np.mean((y_pred - y_test) ** 2)
+logger.info(f"Mean Squared Error trên tập kiểm tra: {mse:.2f}")
