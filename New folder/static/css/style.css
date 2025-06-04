@@ -1,3 +1,9 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin-right: 0.5rem;
+}
 body {
     background-color: #f8f9fa;
     font-family: Arial, sans-serif;
