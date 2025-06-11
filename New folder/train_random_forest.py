@@ -2,63 +2,69 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import LabelEncoder
-import joblib
-import logging
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+import pickle
+import os
 
-# Thiết lập logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Define paths
+DATA_PATH = 'data/insurance.csv'
+MODEL_PATH = 'model/random_forest_model.pkl'
 
-# Đọc dữ liệu
+# Ensure model directory exists
+os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+
+# Load dataset
 try:
-    df = pd.read_csv('data/insurance.csv')
-    logger.info("Đã đọc dữ liệu từ insurance.csv")
+    df = pd.read_csv(DATA_PATH)
 except FileNotFoundError:
-    logger.error("Tệp insurance.csv không tồn tại")
-    raise
+    print(f"Error: {DATA_PATH} not found.")
+    exit(1)
 
-# Kiểm tra cột
-expected_columns = ['age', 'sex', 'bmi', 'children', 'smoker', 'region', 'charges']
-if not all(col in df.columns for col in expected_columns):
-    logger.error(f"Dữ liệu thiếu cột: {set(expected_columns) - set(df.columns)}")
-    raise ValueError("Dữ liệu thiếu cột cần thiết")
+# Preprocess data
+# Map categorical variables
+df['sex'] = df['sex'].map({'male': 0, 'female': 1})
+df['smoker'] = df['smoker'].map({'no': 0, 'yes': 1})
+df['region'] = df['region'].map({'southwest': 0, 'southeast': 1, 'northwest': 2, 'northeast': 3})
 
-# Mã hóa biến phân loại
-le_sex = LabelEncoder()
-le_smoker = LabelEncoder()
-df['sex'] = le_sex.fit_transform(df['sex'])
-df['smoker'] = le_smoker.fit_transform(df['smoker'])
+# Calculate BMI if not present
+if 'bmi' not in df.columns and 'height' in df.columns and 'weight' in df.columns:
+    df['bmi'] = df['weight'] / (df['height'] ** 2)
 
-# Mã hóa one-hot cho region
-df = pd.get_dummies(df, columns=['region'], prefix='region')
-logger.info(f"Cột sau khi mã hóa: {df.columns.tolist()}")
-
-# Đặc trưng và nhãn
-feature_columns = ['age', 'sex', 'bmi', 'children', 'smoker'] + [col for col in df.columns if col.startswith('region_')]
-if 'region_southwest' not in df.columns:
-    logger.warning("Không tìm thấy region_southwest, thêm cột giả")
-    df['region_southwest'] = 0
-feature_columns = [col for col in feature_columns if col != 'region_northeast']  # Loại bỏ region_northeast nếu là tham chiếu
-X = df[feature_columns]
+# Select features and target
+features = ['age', 'sex', 'bmi', 'children', 'smoker', 'region']
+X = df[features]
 y = df['charges']
-logger.info(f"Đặc trưng sử dụng: {feature_columns}")
 
-# Chia dữ liệu
+# Split data
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Huấn luyện mô hình
+# Initialize and train model
 model = RandomForestRegressor(n_estimators=100, random_state=42)
 model.fit(X_train, y_train)
-logger.info("Đã huấn luyện mô hình Random Forest")
 
-# Lưu mô hình và LabelEncoder
-joblib.dump(model, 'model/random_forest_model.pkl')
-joblib.dump(le_sex, 'model/le_sex.pkl')
-joblib.dump(le_smoker, 'model/le_smoker.pkl')
-logger.info("Đã lưu mô hình và LabelEncoder")
+# Make predictions
+train_pred = model.predict(X_train)
+test_pred = model.predict(X_test)
 
-# Đánh giá
-y_pred = model.predict(X_test)
-mse = np.mean((y_pred - y_test) ** 2)
-logger.info(f"Mean Squared Error trên tập kiểm tra: {mse:.2f}")
+# Calculate metrics
+metrics = {
+    'train_r2': r2_score(y_train, train_pred),
+    'test_r2': r2_score(y_test, test_pred),
+    'train_mae': mean_absolute_error(y_train, train_pred),
+    'test_mae': mean_absolute_error(y_test, test_pred),
+    'train_rmse': np.sqrt(mean_squared_error(y_train, train_pred)),
+    'test_rmse': np.sqrt(mean_squared_error(y_test, test_pred))
+}
+
+# Print metrics
+print("Random Forest Model Metrics:")
+for key, value in metrics.items():
+    print(f"{key}: {value:.4f}")
+
+# Save model
+try:
+    with open(MODEL_PATH, 'wb') as f:
+        pickle.dump(model, f)
+    print(f"Model saved to {MODEL_PATH}")
+except Exception as e:
+    print(f"Error saving model: {e}")
