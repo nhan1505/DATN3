@@ -345,22 +345,14 @@ async def predict(input_data: PredictionInput, current_user: Optional[dict] = De
             raise HTTPException(status_code=400, detail="BMI phải nằm trong khoảng 15-50.")
 
         # Chuẩn bị dữ liệu đầu vào
-        region_map = {0: 'southwest', 1: 'southeast', 2: 'northwest', 3: 'northeast'}
-        region_str = region_map.get(input_data.region, None)
-        if region_str is None:
-            logger.error(f"Khu vực không hợp lệ: {input_data.region}")
-            raise HTTPException(status_code=400, detail="Khu vực không hợp lệ.")
-
-        feature_columns = ['age', 'sex', 'bmi', 'children', 'smoker', 'region_northwest', 'region_southeast', 'region_southwest']
+        feature_columns = ['age', 'sex', 'bmi', 'children', 'smoker', 'region']
         input_df = pd.DataFrame({
             'age': [input_data.age],
             'sex': [input_data.sex],
             'bmi': [bmi],
             'children': [input_data.children],
             'smoker': [input_data.smoker],
-            'region_northwest': [1 if region_str == 'northwest' else 0],
-            'region_southeast': [1 if region_str == 'southeast' else 0],
-            'region_southwest': [1 if region_str == 'southwest' else 0]
+            'region': [input_data.region]
         }, columns=feature_columns)
         logger.debug(f"Dữ liệu đầu vào mô hình: {input_df.to_dict()}")
 
