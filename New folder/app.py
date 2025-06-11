@@ -127,7 +127,7 @@ try:
         logger.error("Tệp random_forest_model.pkl không tồn tại.")
         raise FileNotFoundError("Tệp random_forest_model.pkl không tồn tại.")
     if os.path.exists('model/decision_tree_model.pkl'):
-        models['decision_tree_model'] = joblib.load('model/decision_tree_model.pkl')
+        models['decision_tree'] = joblib.load('model/decision_tree_model.pkl')
         logger.info("Đã tải mô hình Decision Tree.")
     else:
         logger.error("Tệp decision_tree_model.pkl không tồn tại.")
@@ -169,7 +169,7 @@ class PredictionInput(BaseModel):
     children: int = Field(..., ge=0, le=5)
     smoker: int = Field(..., ge=0, le=1)
     region: int = Field(..., ge=0, le=3)
-    model: Literal['random_forest', 'decision_tree_model']
+    model: Literal['random_forest', 'decision_tree']
 
 # Hàm xác thực
 def verify_password(plain_password, hashed_password):
